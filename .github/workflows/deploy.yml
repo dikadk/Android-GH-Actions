@@ -1,0 +1,50 @@
+name: APK Deploy to Firebase
+
+on:
+  workflow_dispatch:
+    # Inputs the workflow accepts.
+    inputs:
+      releaseNotes:
+        # Friendly description to be shown in the UI instead of 'name'
+        description: 'Release Notes'
+        # Default value if no value is explicitly provided
+        default: ''
+        # Input has to be provided for the workflow to run
+        required: true
+
+  pull_request:
+    branches:
+      - 'main'
+
+jobs:
+  deployFirebase:
+    runs-on: ubuntu-latest
+    steps:
+     
+      - uses: actions/checkout@v2
+      - name: Decrypt keystore props
+        run: |
+          echo "${{secrets.KEYSTORE_PROPS}}" > keystore.properties.asc
+          gpg -d --passphrase "${{secrets.KEYSTORE_PASSWORD}}" --batch keystore.properties.asc > app/keystore.properties
+      - name: Decrypt release key
+        run: |
+          echo "${{secrets.RELEASE_KEY}}" > release_key.jks.asc
+          gpg -d --passphrase "${{secrets.KEYSTORE_PASSWORD}}" --batch release_key.jks.asc > app/release_key.jks
+      - name: set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+      - uses: jwalton/gh-find-current-pr@v1.0.2
+        id: findPr
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Firebase Deploy
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{secrets.FIREBASE_APP_ID}}
+          token: ${{secrets.FIREBASE_TOKEN}}
+          groups: DEV
+          releaseNotes: ${{ github.event.inputs.releaseNotes}}
+          file: app/build/outputs/apk/production/release/app-production-release.apk
